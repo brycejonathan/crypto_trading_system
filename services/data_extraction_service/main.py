@@ -3,7 +3,7 @@
 import logging
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pika
 import requests
@@ -48,7 +48,11 @@ class KrakenAPIClient:
             if data.get('error'):
                 logger.error(f"API error: {data['error']}")
                 return None
-            return data['result']
+            # Map the field names to verbose ones
+            asset_pairs_info = {}
+            for key, value in data['result'].items():
+                asset_pairs_info[key] = self._map_asset_pair_info(value)
+            return asset_pairs_info
         except requests.RequestException as e:
             logger.error(f"RequestException while fetching asset pairs: {e}")
             return None
@@ -66,7 +70,11 @@ class KrakenAPIClient:
             if data.get('error'):
                 logger.error(f"API error: {data['error']}")
                 return None
-            return data['result']
+            # Map the field names to verbose ones
+            ticker_info = {}
+            for key, value in data['result'].items():
+                ticker_info[key] = self._map_ticker_info(value)
+            return ticker_info
         except requests.RequestException as e:
             logger.error(f"RequestException while fetching ticker information: {e}")
             return None
@@ -84,10 +92,85 @@ class KrakenAPIClient:
             if data.get('error'):
                 logger.error(f"API error: {data['error']}")
                 return None
-            return data['result']
+            # Map the field names to verbose ones
+            order_book_data = {}
+            for key, value in data['result'].items():
+                order_book_data[key] = self._map_order_book(value)
+            return order_book_data
         except requests.RequestException as e:
             logger.error(f"RequestException while fetching order book: {e}")
             return None
+
+    def _map_asset_pair_info(self, data):
+        """
+        Maps the asset pair info fields to verbose names.
+        """
+        # The field names are already verbose, but ensure consistency
+        return data
+
+    def _map_ticker_info(self, data):
+        """
+        Maps the ticker info fields to verbose names.
+        """
+        mapped_data = {
+            'ask': {
+                'price': data['a'][0],
+                'whole_lot_volume': data['a'][1],
+                'lot_volume': data['a'][2]
+            },
+            'bid': {
+                'price': data['b'][0],
+                'whole_lot_volume': data['b'][1],
+                'lot_volume': data['b'][2]
+            },
+            'last_trade_closed': {
+                'price': data['c'][0],
+                'lot_volume': data['c'][1]
+            },
+            'volume': {
+                'today': data['v'][0],
+                'last_24_hours': data['v'][1]
+            },
+            'volume_weighted_average_price': {
+                'today': data['p'][0],
+                'last_24_hours': data['p'][1]
+            },
+            'number_of_trades': {
+                'today': data['t'][0],
+                'last_24_hours': data['t'][1]
+            },
+            'low_price': {
+                'today': data['l'][0],
+                'last_24_hours': data['l'][1]
+            },
+            'high_price': {
+                'today': data['h'][0],
+                'last_24_hours': data['h'][1]
+            },
+            'opening_price': data['o']
+        }
+        return mapped_data
+
+    def _map_order_book(self, data):
+        """
+        Maps the order book data to verbose field names.
+        """
+        mapped_data = {
+            'asks': [self._map_order_book_entry(entry) for entry in data.get('asks', [])],
+            'bids': [self._map_order_book_entry(entry) for entry in data.get('bids', [])]
+        }
+        return mapped_data
+
+    def _map_order_book_entry(self, entry):
+        """
+        Maps a single order book entry to verbose field names.
+        """
+        mapped_entry = {
+            'price': entry[0],
+            'volume': entry[1],
+            'timestamp': int(entry[2])
+        }
+        return mapped_entry
 
 
 class DataExtractor:
@@ -136,10 +219,22 @@ class DataExtractor:
                     logger.error(f"Failed to fetch order book for {pair}")
                     continue
 
-                # Combine all data into a single payload
+                # Get current timestamp
+                timestamp = int(time.time())
+
+                # Convert timestamp to different time zones
+                utc_time = datetime.utcfromtimestamp(timestamp)
+                timestamp_jamaica = (utc_time + timedelta(hours=-5)).strftime('%Y-%m-%d %H:%M:%S')
+                timestamp_europe = (utc_time + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
+                timestamp_asia = (utc_time + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
+
+                # Combine all data into a single payload with verbose field names
                 payload = {
-                    'timestamp': int(time.time()),
-                    'pair': pair,
+                    'timestamp': timestamp,
+                    'timestamp_jamaica': timestamp_jamaica,
+                    'timestamp_europe': timestamp_europe,
+                    'timestamp_asia': timestamp_asia,
+                    'trading_pair': pair,
                     'asset_pair_info': asset_pair_data,
                     'ticker_info': ticker_data,
                     'order_book': order_book_data.get(pair_key, {})
