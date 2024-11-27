@@ -1,0 +1,4 @@
+# data_extraction_service/requirements.txt
+
+requests>=2.22.0
+pika>=1.1.0
